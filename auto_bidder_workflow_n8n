@@ -1,0 +1,654 @@
+{
+  "name": "Outlook Inbox Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "output": "raw",
+        "filters": {
+          "foldersToInclude": [
+            "AAMkAGUzZTBmZGJiLTRiNmEtNGYyMi04NTM3LWQ1OWIzOWY0MTYyMgAuAAAAAACIQAf3unIHQZRuE3nkAMAtAQDHooJa0CdzTaHotZAZTb4AAAAAAAEMAAA="
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlookTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1340,
+        80
+      ],
+      "id": "a2d3e599-b3c9-4a6d-bae3-c755fbe7c9f4",
+      "name": "Email Ingestion",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "uW7UT43AqZY1XEyB",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "=chatgpt-4o-latest",
+          "mode": "id"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Here's the body data from the most recent email: {{ $json.body.content }}"
+            },
+            {
+              "content": "Take the incoming email and clean it up so it is more readable. Get rid of HTML tagging, but don't get rid of any of the email message content itself. Don't include the subject",
+              "role": "system"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -920,
+        80
+      ],
+      "id": "809060b9-c6b7-4767-99a2-67433a19cec1",
+      "name": "Email Cleaning Step (LLM)",
+      "credentials": {
+        "openAiApi": {
+          "id": "Hyae1rQ4uoM7FnY5",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        300
+      ],
+      "id": "aeb519a8-b415-453b-b26e-2a1675af0dec",
+      "name": "RFQ vs Non RFQ AI",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "WSwEKTsR8TPRqeC9",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputText": "={{ $json.message.content }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "RFQ",
+              "description": "This email contains a request for a price quote from a broker. It includes specific shipment details, but it may not contain all of them, such as origin and destination locations, pickup and delivery dates, commodity type, and quantity. The sender may ask for an all-in rate or spot rate, and reference logistics terms like FTL/LTL, fuel surcharge, accessorial charges, and tracking. The message often includes a deadline for response and may request carrier documentation such as insurance or MC number."
+            },
+            {
+              "category": "Not RFQ",
+              "description": "This email does not request a quote for services. It may include general updates, shipment tracking information, billing inquiries, scheduling coordination, service complaints, or administrative communication. It lacks detailed shipment specifications, rate requests, or deadline-based quote solicitations."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [
+        -740,
+        80
+      ],
+      "id": "f47f4160-d4d5-4ed7-ba4c-225c7f07d25b",
+      "name": "RFQ vs Non RFQ Classification"
+    },
+    {
+      "parameters": {
+        "inputText": "={{ $json.message.content }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "In Scope",
+              "description": "This email contains a clear RFQ (Request for Quote) that falls within operational boundaries. It must meet all of the following criteria:\n\nIncludes pickup and delivery cities and states that are unambiguous and confidently determined.\n\nThe mode must be FTL (Full Truckload) only.\n\nThe weight must be able to be expressed as a numeric value, if the weight cannot be determined as a numeric value, mark it as Insufficient Information\n\nThe delivery date must be a specific date in MM/DD/YYYY format. Relative or vague terms like “Friday,” “ASAP,” or “next week” are Insufficient Information.\n\nNo multi-stop, special handling, LTL, or exceptions are mentioned.\n\nIf any of the above conditions are not clearly met, the email should NOT be classified as \"In Scope.\""
+            },
+            {
+              "category": "Out of Scope",
+              "description": "This email contains a clear RFQ or shipment-related request but falls outside the defined operational scope. It still includes substantial details — such as origin/destination, weight, or scheduling — but introduces complicating factors like LTL (Less Than Truckload) mode, multi-stop routing, requests for rate negotiation, special handling requirements (e.g., freezer storage, white-glove service), or any non-standard service expectations. The email is specific and actionable but cannot be processed under current guidelines."
+            },
+            {
+              "category": "Insufficient Information",
+              "description": "This email does not contain enough relevant or specific shipment information to be classified as either In Scope or Out of Scope. It may include vague language, general inquiries, follow-up messages, incomplete data, or unrelated communication. If the email lacks concrete RFQ components — such as pickup/delivery locations, weight, mode of transport, or pricing requests — it should default to this category. All ambiguous or context-light messages fall here by default."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        80
+      ],
+      "id": "e01b7c15-9c6d-4756-8220-a9e791859d1b",
+      "name": "In Scope vs Out of Scope Classifier"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -100
+      ],
+      "id": "fc1041b3-8080-4619-9b0e-029a4721e1a9",
+      "name": "In Scope vs Out of Scope AI",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "WSwEKTsR8TPRqeC9",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=The following email has been deemed as having Insufficient Information to provide an accurate quote: {{ $json.message.content }}"
+            },
+            {
+              "content": "=Construct an email body response informing the user that the information passed was insufficient. Offer some potential options the user could respond with to help the RFQ such as pickup and delivery locations, FTL (Full Truckload) mode, weight, pallet count, dates, and a straightforward request for a rate or quote. Only output the cleaned message content with no html tagging, we are Bear Cognition and I am Kayce Elgin. Format the greeting as including the first name of the following: {{ $('Email Ingestion').item.json.from.emailAddress.name }}",
+              "role": "system"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        220,
+        320
+      ],
+      "id": "f041b148-8a09-4462-a839-8eb407a05c84",
+      "name": "Insufficient Information Email Draft",
+      "credentials": {
+        "openAiApi": {
+          "id": "Hyae1rQ4uoM7FnY5",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $('Email Ingestion').item.json.toRecipients[0].emailAddress.address }}",
+        "subject": "=Insufficient Information - Request From {{ $('Email Ingestion').item.json.sender.emailAddress.name }}",
+        "bodyContent": "=Hey!\n\nWe received a RFQ request deemed to contain insufficient information for a standard RFQ request. Here's the message information:\n\nFrom: {{ $('Email Ingestion').item.json.sender.emailAddress.name }} - {{ $('Email Ingestion').item.json.from.emailAddress.address }}\n\nMessage Body:\n{{ $('Email Cleaning Step (LLM)').item.json.message.content }}\n\nA draft response has been placed in your drafts folder. \n\nBest, \n\nYour AI Assistant",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        880,
+        320
+      ],
+      "id": "1450794c-875e-458b-92ea-21bebf3298da",
+      "name": "Insufficient Information - Notify Broker",
+      "webhookId": "00cd8f59-7851-4d1e-bc79-a62f19cbd5ba",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "uW7UT43AqZY1XEyB",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Insufficient Information For Service",
+        "bodyContent": "={{ $json.message.content }}",
+        "additionalFields": {
+          "toRecipients": "={{ $('Email Ingestion').item.json.sender.emailAddress.address }}"
+        }
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        660,
+        320
+      ],
+      "id": "c27fe427-9342-449f-a107-5d82d05e5ed5",
+      "name": "Insufficient Information - Create Draft",
+      "webhookId": "7bb4c23c-8585-4277-a834-89dc8cab3618",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "uW7UT43AqZY1XEyB",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $('Email Ingestion').item.json.toRecipients[0].emailAddress.address }}",
+        "subject": "=Out of Scope RFQ - Request From  {{ $('Email Ingestion').item.json.from.emailAddress.name }}",
+        "bodyContent": "={{ $json.message.content }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        660,
+        80
+      ],
+      "id": "b219744a-6881-4631-8855-6ca01c4b3eef",
+      "name": "Microsoft Outlook",
+      "webhookId": "e9f2e43f-2838-4ff7-b3cd-c438d92b9a12",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "uW7UT43AqZY1XEyB",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=We've received the following email that has been classified as an Out of Scope RFQ Request:  {{ $json.message.content }}"
+            },
+            {
+              "content": "=You are writing a professional, informational email body to notify a receiving broker that an Out of Scope shipment request was submitted to them by another party.\n\nInstructions:\n- Use a polite, professional, and informative tone\n- Address the receiving broker using this variable: {{ $('Email Ingestion').item.json.toRecipients[0].emailAddress.name }}\n- Mention that the request was submitted by the sender: {{ $('Email Ingestion').item.json.from.emailAddress.name }} - {{ $('Email Ingestion').item.json.from.emailAddress.address }}\n- Explain that the request is considered Out of Scope and list common complicating factors:\n    - LTL (Less Than Truckload) shipment mode\n    - Multi-stop routing\n    - Requests for rate negotiation\n    - Special handling (e.g., freezer storage, temperature control, white-glove service)\n    - Other non-standard service expectations\n- Emphasize that only standard FTL (Full Truckload), single-stop shipments with no special conditions are in scope\n- Do not include a subject line\n- End with a professional closing and placeholder for the sender/team/company\n\nFormat:\n- Plain text\n- Include bullet points for the complicating factors\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        220,
+        80
+      ],
+      "id": "22126f0f-a98a-4251-bf26-9d96b85267e1",
+      "name": "Email for Receiving Broker",
+      "credentials": {
+        "openAiApi": {
+          "id": "Hyae1rQ4uoM7FnY5",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You've received the following RFQ request that has been deemed as In Scope:  {{ $json.message.content }}"
+            },
+            {
+              "content": "Extract all information as a JSON object, if information is not present, leave it as null. DO NOT ATTEMPT TO INFER VALUES OR GUESS. Format the result in the following format with the following names:\n- shipment_type: (String) The type of shipment (FTL)\n- origin: (String) Where the shipment is coming from\n- destination: (String) Where the shipment is being sent to\n- distance_miles: (Float) The distance between the origin and destination in miles, only calculate if both the origin and destination are clearly defined and understandable\n- weight: (Float) The cumulative weight of the entire shipment in pounds.  If the weight is not in pounds, convert it using the conversion chart below. Here are some common conversions:  \n- 1 tons = 2,000 lbs \n- 1 metric tons = 2,204 lbs \n- 1 short tons = 2,000 lbs  \n- 1 kilogram = 2.20462 lbs  \n- 1 gram = 0.00220462 lbs  \n- 1 ounce = 0.0625 lbs  \n- 1 stone = 14 lbs  \n\n- delivery_date: (String) The date in which the shipment should be received, if there are multiple dates, choose the earliest one. Format the date in mm/dd/yyyy",
+              "role": "system"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        220,
+        -160
+      ],
+      "id": "46acaed1-c422-4a33-8237-9f7ea803d21a",
+      "name": "Format In Scope Items as JSON",
+      "credentials": {
+        "openAiApi": {
+          "id": "Hyae1rQ4uoM7FnY5",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5000/calculate-cost",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "distance_miles",
+              "value": "={{ JSON.parse($json[\"message\"][\"content\"]).distance_miles }}"
+            },
+            {
+              "name": "weight_lbs",
+              "value": "={{ JSON.parse($json[\"message\"][\"content\"]).weight }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -160
+      ],
+      "id": "777d5d82-e804-4454-b59f-803b73a33ad9",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=I need to format a message given a JSON returned object of RFQ response data. This message should be cordial and include the sender's name within a greeting."
+            },
+            {
+              "content": "=Here is the JSON data to be converted into the email response:  {{ $json.details }} {{ $json.total_cost_usd }}. Format the output as follows: Include a greeting to {{ $('Email Ingestion').item.json.sender.emailAddress.name }}. Include relevant information in natural language format from {{ $('Format In Scope Items as JSON').item.json.message.content }} (example: For a shipment from Charleston SC to Manhattan NY totalling 660 miles and weighing 4000lbs expected to be received by June 7th, 2025, the calculated rate is $413.50). If there is any missing or incomplete data points, do not attempt to infer or guess the values as that will have detrimental effects on the outcome, instead do not include the missing data points. Conclude the email with a cordial goodbye from {{ $('Email Ingestion').item.json.toRecipients[0].emailAddress.name }}",
+              "role": "system"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        880,
+        -160
+      ],
+      "id": "23735f47-dd8d-4371-aae5-cb91beb83f0f",
+      "name": "Classify and Create Email",
+      "notesInFlow": false,
+      "credentials": {
+        "openAiApi": {
+          "id": "Hyae1rQ4uoM7FnY5",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $('Email Ingestion').item.json.from.emailAddress.address }}",
+        "subject": "={{ $json.message.content.match(/^Subject:\\s*(.*)/)[1] }}",
+        "bodyContent": "={{ $json.message.content.replace(/^Subject:.*\\n*/i, '').trim() }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        -160
+      ],
+      "id": "fafec72b-1e44-4d7c-b03a-2e95a39b9f69",
+      "name": "Send RFQ Response Email",
+      "webhookId": "79ecc789-7793-4072-bd7f-56ee12dce8dc",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "uW7UT43AqZY1XEyB",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ce3e94c4-2725-47c1-9fea-ef4a3e18f094",
+              "leftValue": "={{ $json.sender.emailAddress.address }}",
+              "rightValue": "={{ $json.toRecipients[0].emailAddress.address }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -1140,
+        80
+      ],
+      "id": "6568c9d3-cfdf-41dc-bba1-3d47ba682d9c",
+      "name": "Filter Out Emails Sent to Myself"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Ingestion": {
+      "main": [
+        [
+          {
+            "node": "Filter Out Emails Sent to Myself",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Cleaning Step (LLM)": {
+      "main": [
+        [
+          {
+            "node": "RFQ vs Non RFQ Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RFQ vs Non RFQ AI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RFQ vs Non RFQ Classification",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RFQ vs Non RFQ Classification": {
+      "main": [
+        [
+          {
+            "node": "In Scope vs Out of Scope Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "In Scope vs Out of Scope AI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "In Scope vs Out of Scope Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "In Scope vs Out of Scope Classifier": {
+      "main": [
+        [
+          {
+            "node": "Format In Scope Items as JSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email for Receiving Broker",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insufficient Information Email Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insufficient Information Email Draft": {
+      "main": [
+        [
+          {
+            "node": "Insufficient Information - Create Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insufficient Information - Create Draft": {
+      "main": [
+        [
+          {
+            "node": "Insufficient Information - Notify Broker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email for Receiving Broker": {
+      "main": [
+        [
+          {
+            "node": "Microsoft Outlook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format In Scope Items as JSON": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Classify and Create Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify and Create Email": {
+      "main": [
+        [
+          {
+            "node": "Send RFQ Response Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Out Emails Sent to Myself": {
+      "main": [
+        [
+          {
+            "node": "Email Cleaning Step (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2e784da1-1b01-45c1-8dcf-fe7e166849c3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f1124743422ef4f2285a6bddfe8a9e7423c65a341583a4a0c7dafd27f6eb9283"
+  },
+  "id": "FK21d6kiLTTHD5IJ",
+  "tags": []
+}
